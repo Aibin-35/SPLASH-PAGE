@@ -1,112 +1,161 @@
 #include <stdio.h>
-#define TABLE_SIZE 10
+#include <stdlib.h>
 
-int hashTable[TABLE_SIZE];
-int deletedFlag = -2;  
+typedef struct Block {
+    size_t size;
+    int free;
+    struct Block* next;
+    struct Block* prev;
+    void* ptr;
+} Block;
 
-void initTable() {
-    for (int i = 0; i < TABLE_SIZE; i++)
-        hashTable[i] = -1;
+Block* head = NULL;
+
+Block* create_block(size_t size) {
+    Block* block = (Block*)malloc(sizeof(Block));
+    block->size = size;
+    block->free = 0;
+    block->next = NULL;
+    block->prev = NULL;
+    block->ptr = malloc(size);
+    return block;
 }
 
-int hashFunction(int key) {
-    return key % TABLE_SIZE;
+void add_block(Block* block) {
+    if (!head) {
+        head = block;
+    } else {
+        Block* current = head;
+        while (current->next) {
+            current = current->next;
+        }
+        current->next = block;
+        block->prev = current;
+    }
 }
 
-void insert(int key) {
-    int index = hashFunction(key);
-    int originalIndex = index;
+void* my_malloc(size_t size) {
+    Block* current = head;
+    while (current) {
+        if (current->free && current->size >= size) {
+            current->free = 0;
+            return current->ptr;
+        }
+        current = current->next;
+    }
+    Block* new_block = create_block(size);
+    add_block(new_block);
+    return new_block->ptr;
+}
 
-    while (hashTable[index] != -1 && hashTable[index] != deletedFlag) {
-        index = (index + 1) % TABLE_SIZE;
-        if (index == originalIndex) {
-            printf("Hash table full, cannot insert %d\n", key);
+void my_free(void* ptr) {
+    Block* current = head;
+    while (current) {
+        if (current->ptr == ptr) {
+            current->free = 1;
             return;
         }
+        current = current->next;
     }
-
-    hashTable[index] = key;
-    printf("Inserted %d at index %d\n", key, index);
+    printf("Pointer not found.\n");
 }
 
-int search(int key) {
-    int index = hashFunction(key);
-    int originalIndex = index;
-
-    while (hashTable[index] != -1) {
-        if (hashTable[index] == key)
-            return index;
-        index = (index + 1) % TABLE_SIZE;
-        if (index == originalIndex)
-            break;
+void garbage_collect() {
+    Block* current = head;
+    while (current) {
+        Block* next = current->next;
+        if (current->free) {
+            free(current->ptr);
+            if (current->prev)
+                current->prev->next = current->next;
+            if (current->next)
+                current->next->prev = current->prev;
+            if (current == head)
+                head = current->next;
+            free(current);
+        }
+        current = next;
     }
-    return -1;
 }
 
-void delete(int key) {
-    int index = search(key);
-    if (index == -1) {
-        printf("Key %d not found, cannot delete\n", key);
-        return;
+void print_blocks() {
+    Block* current = head;
+    printf("\nMemory Blocks:\n");
+    int i = 1;
+    while (current) {
+        printf("%d. Address: %p, Size: %zu, Free: %s\n", i, current->ptr, current->size, current->free ? "Yes" : "No");
+        current = current->next;
+        i++;
     }
-    hashTable[index] = deletedFlag;
-    printf("Key %d deleted from index %d\n", key, index);
+    printf("\n");
 }
 
-void printTable() {
-    printf("Hash Table:\n");
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        if (hashTable[i] == -1)
-            printf("%d: NULL\n", i);
-        else if (hashTable[i] == deletedFlag)
-            printf("%d: DELETED\n", i);
-        else
-            printf("%d: %d\n", i, hashTable[i]);
+void* get_pointer_by_index(int index) {
+    Block* current = head;
+    int i = 1;
+    while (current) {
+        if (i == index) {
+            return current->ptr;
+        }
+        current = current->next;
+        i++;
     }
+    return NULL;
 }
 
 int main() {
-    int choice, key;
-
-    initTable();
+    int choice;
+    size_t size;
+    int index;
+    void* ptr;
 
     while (1) {
-        printf("\nChoose operation: 1-Insert, 2-Search, 3-Delete, 4-Print, 0-Exit\n");
+        printf("1. Allocate memory\n");
+        printf("2. Free memory\n");
+        printf("3. Garbage collect\n");
+        printf("4. Show memory blocks\n");
+        printf("5. Exit\n");
+        printf("Enter choice: ");
         scanf("%d", &choice);
 
         switch (choice) {
             case 1:
-                printf("Enter key to insert: ");
-                scanf("%d", &key);
-                insert(key);
+                printf("Enter size to allocate: ");
+                scanf("%zu", &size);
+                ptr = my_malloc(size);
+                printf("Memory allocated at %p\n", ptr);
                 break;
 
-            case 2: {
-                printf("Enter key to search: ");
-                scanf("%d", &key);
-                int idx = search(key);
-                if (idx != -1)
-                    printf("Key %d found at index %d\n", key, idx);
-                else
-                    printf("Key %d not found\n", key);
+            case 2:
+                print_blocks();
+                printf("Enter block number to free: ");
+                scanf("%d", &index);
+                ptr = get_pointer_by_index(index);
+                if (ptr) {
+                    my_free(ptr);
+                    printf("Memory block %d freed.\n", index);
+                } else {
+                    printf("Invalid block number.\n");
+                }
                 break;
-            }
 
             case 3:
-                printf("Enter key to delete: ");
-                scanf("%d", &key);
-                delete(key);
+                garbage_collect();
+                printf("Garbage collection complete.\n");
                 break;
 
             case 4:
-                printTable();
+                print_blocks();
                 break;
 
-            case 0:
+            case 5:
+                printf("Exiting...\n");
                 return 0;
 
             default:
-                printf("Invalid choice\n");
+                printf("Invalid choice, try again.\n");
         }
     }
+    return 0;
 }
+
